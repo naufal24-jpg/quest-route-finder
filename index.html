@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuestRoute: Navigasi Peta &amp; Pencarian Jalur Tercepat</title>
+  <meta name="description" content="Aplikasi web interaktif navigasi peta dan pencarian jalur tercepat menggunakan OpenStreetMap, Leaflet, Nominatim, dan OSRM.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="styles.css">
+
+  <script src="https://cdn.tailwindcss.com" defer></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-100 selection:text-blue-900">
+  <a href="#route-panel" class="skip-link">Loncat ke panel pencarian rute</a>
+
+  <!-- Full-viewport interactive map canvas -->
+  <main class="app-shell" aria-label="Ruang kerja navigasi peta">
+    <div id="map" class="map-canvas" role="region" aria-label="Peta interaktif OpenStreetMap. Klik peta untuk menentukan titik awal atau tujuan."></div>
+    <div id="map-fallback" class="map-fallback" hidden role="alert">
+      <div class="map-fallback-card">
+        <p class="map-fallback-title">Peta belum dapat dimuat</p>
+        <p class="map-fallback-desc">Periksa koneksi internet Anda agar pustaka Leaflet dan tile OpenStreetMap dapat diakses, lalu muat ulang halaman ini.</p>
+        <button type="button" id="reload-map-btn" class="btn-primary">Muat Ulang Halaman</button>
+      </div>
+    </div>
+
+    <!-- Top Floating Header -->
+    <header class="floating-header" aria-label="Navigasi utama dan filter lokasi">
+      <div class="header-primary-row">
+        <div class="brand-group">
+          <div class="brand-mark" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="6" cy="18" r="3"></circle>
+              <circle cx="18" cy="6" r="3"></circle>
+              <path d="M8.5 16.5C11 14 10 10 15.5 7.5"></path>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1 class="brand-title">QuestRoute</h1>
+            <span class="brand-subtitle">Direktori &amp; Jalur Tercepat</span>
+          </div>
+        </div>
+
+        <div id="osm-status-badge" class="status-badge" role="status" aria-live="polite" data-state="online">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="osm-status-text">OpenStreetMap Aktif</span>
+        </div>
+
+        <nav class="category-nav desktop-categories" aria-label="Filter kategori lokasi cepat">
+          <button type="button" class="category-pill is-active" data-category="all" aria-pressed="true">Semua</button>
+          <button type="button" class="category-pill" data-category="kampus" aria-pressed="false">Kampus</button>
+          <button type="button" class="category-pill" data-category="stasiun" aria-pressed="false">Stasiun</button>
+          <button type="button" class="category-pill" data-category="belanja" aria-pressed="false">Pusat Belanja</button>
+          <button type="button" class="category-pill" data-category="kuliner" aria-pressed="false">Kuliner</button>
+        </nav>
+
+        <div class="header-actions">
+          <button type="button" id="reset-route-btn" class="btn-reset" disabled aria-label="Reset rute dan hapus semua titik">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+              <path d="M3 3v5h5"></path>
+            </svg>
+            <span>Reset Rute</span>
+          </button>
+        </div>
+      </div>
+
+      <nav class="category-nav mobile-categories" aria-label="Filter kategori lokasi mobile">
+        <button type="button" class="category-pill is-active" data-category="all" aria-pressed="true">Semua</button>
+        <button type="button" class="category-pill" data-category="kampus" aria-pressed="false">Kampus</button>
+        <button type="button" class="category-pill" data-category="stasiun" aria-pressed="false">Stasiun</button>
+        <button type="button" class="category-pill" data-category="belanja" aria-pressed="false">Pusat Belanja</button>
+        <button type="button" class="category-pill" data-category="kuliner" aria-pressed="false">Kuliner</button>
+      </nav>
+    </header>
+
+    <!-- Desktop Sidebar Collapse Toggle (visible when sidebar is collapsed) -->
+    <button type="button" id="expand-sidebar-btn" class="sidebar-reopen-btn" hidden aria-label="Buka panel pencarian rute" aria-expanded="false" aria-controls="route-panel">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 18l6-6-6-6"></path>
+      </svg>
+      <span>Panel Rute</span>
+    </button>
+
+    <!-- Left Floating Sidebar (Desktop/Tablet) & Collapsible Bottom Sheet (Mobile) -->
+    <aside id="route-panel" class="floating-sidebar" aria-label="Panel pencarian rute dan direktori lokasi" data-sheet-state="expanded">
+      <!-- Mobile Bottom Sheet Handle & Toggle -->
+      <div class="sheet-header-bar">
+        <button type="button" id="mobile-sheet-toggle" class="sheet-toggle-btn" aria-expanded="true" aria-controls="sidebar-scroll-body">
+          <span class="sheet-grabber" aria-hidden="true"></span>
+          <span class="sheet-toggle-row">
+            <span id="mobile-sheet-summary" class="sheet-summary-text">Cari Rute &amp; Lokasi Populer</span>
+            <span id="mobile-sheet-action" class="sheet-action-label">Kecilkan</span>
+          </span>
+        </button>
+      </div>
+
+      <!-- Panel Top Bar (Desktop/Tablet) -->
+      <div class="sidebar-header">
+        <div>
+          <span class="eyebrow-label">PENCARIAN JALUR</span>
+          <h2 class="panel-heading">Rencanakan Perjalanan</h2>
+        </div>
+        <button type="button" id="collapse-sidebar-btn" class="icon-btn" aria-label="Sembunyikan panel rute" aria-expanded="true" aria-controls="route-panel" title="Sembunyikan panel">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div id="sidebar-scroll-body" class="sidebar-body">
+        <!-- Route Planner Form -->
+        <section class="route-form-section" aria-labelledby="form-section-title">
+          <h3 id="form-section-title" class="sr-only">Formulir Titik Awal dan Titik Tujuan</h3>
+
+          <div class="map-pick-bar" role="status" aria-live="polite">
+            <span class="pick-indicator" id="pick-indicator-dot" data-target="origin" aria-hidden="true"></span>
+            <span id="map-pick-hint" class="pick-hint-text">Klik peta akan mengisi <strong>Titik Awal</strong></span>
+          </div>
+
+          <form id="route-form" class="route-form" novalidate>
+            <div class="route-inputs-grid">
+              <div class="route-rail" aria-hidden="true">
+                <span class="rail-node rail-node-origin"></span>
+                <span class="rail-line"></span>
+                <span class="rail-node rail-node-destination"></span>
+              </div>
+
+              <div class="route-fields-stack">
+                <!-- Origin Field -->
+                <div class="field-group" data-slot="origin">
+                  <div class="field-label-row">
+                    <label for="origin-input" class="field-label">Titik Awal</label>
+                    <button type="button" class="field-target-btn is-targeted" data-pick-target="origin" aria-pressed="true">Pilih di peta</button>
+                  </div>
+                  <div class="input-wrapper">
+                    <input
+                      id="origin-input"
+                      name="origin"
+                      type="text"
+                      class="location-input"
+                      placeholder="Cari alamat, gedung, atau klik peta..."
+                      autocomplete="off"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded="false"
+                      aria-controls="origin-suggestions"
+                    >
+                    <button type="button" id="clear-origin-btn" class="input-clear-btn" hidden aria-label="Hapus titik awal">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+                        <path d="M18 6L6 18M6 6l12 12"></path>
+                      </svg>
+                    </button>
+                  </div>
+                  <ul id="origin-suggestions" class="suggestions-list" role="listbox" aria-label="Saran titik awal" hidden></ul>
+                </div>
+
+                <!-- Destination Field -->
+                <div class="field-group" data-slot="destination">
+                  <div class="field-label-row">
+                    <label for="destination-input" class="field-label">Titik Tujuan</label>
+                    <button type="button" class="field-target-btn" data-pick-target="destination" aria-pressed="false">Pilih di peta</button>
+                  </div>
+                  <div class="input-wrapper">
+                    <input
+                      id="destination-input"
+                      name="destination"
+                      type="text"
+                      class="location-input"
+                      placeholder="Cari tujuan atau klik peta..."
+                      autocomplete="off"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded="false"
+                      aria-controls="destination-suggestions"
+                    >
+                    <button type="button" id="clear-destination-btn" class="input-clear-btn" hidden aria-label="Hapus titik tujuan">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+                        <path d="M18 6L6 18M6 6l12 12"></path>
+                      </svg>
+                    </button>
+                  </div>
+                  <ul id="destination-suggestions" class="suggestions-list" role="listbox" aria-label="Saran titik tujuan" hidden></ul>
+                </div>
+              </div>
+
+              <button type="button" id="swap-points-btn" class="swap-btn" aria-label="Tukar titik awal dan titik tujuan" title="Tukar arah rute" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M7 16V4m0 0L3 8m4-4l4 4"></path>
+                  <path d="M17 8v12m0 0l4-4m-4 4l-4-4"></path>
+                </svg>
+              </button>
+            </div>
+
+            <div class="form-action-row">
+              <button type="submit" id="find-route-btn" class="btn-primary btn-full">
+                <span>Hitung Jalur Tercepat</span>
+              </button>
+            </div>
+            <p id="form-feedback" class="form-feedback" role="alert" hidden></p>
+          </form>
+        </section>
+
+        <!-- Route Result Card (Empty / Loading / Error / Success states) -->
+        <section id="result-section" class="result-section" aria-labelledby="result-heading" aria-live="polite">
+          <h3 id="result-heading" class="sr-only">Hasil Perhitungan Rute</h3>
+
+          <!-- Empty State -->
+          <div id="route-empty-state" class="route-state-card route-empty-card">
+            <div class="state-icon-box" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon>
+                <line x1="9" y1="3" x2="9" y2="18"></line>
+                <line x1="15" y1="6" x2="15" y2="21"></line>
+              </svg>
+            </div>
+            <div>
+              <p class="state-title">Belum ada rute dihitung</p>
+              <p class="state-desc">Pilih Titik Awal dan Titik Tujuan lewat kolom pencarian, klik langsung pada peta, atau pilih dari destinasi populer di bawah.</p>
+            </div>
+          </div>
+
+          <!-- Loading State -->
+          <div id="route-loading-state" class="route-state-card route-loading-card" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <div>
+              <p class="state-title">Menghitung rute tercepat</p>
+              <p class="state-desc">Mengambil jalur optimal dan alternatif dari server OSRM...</p>
+            </div>
+          </div>
+
+          <!-- Error State -->
+          <div id="route-error-state" class="route-state-card route-error-card" hidden role="alert">
+            <div class="error-content">
+              <p class="error-title" id="route-error-title">Gagal menghitung rute</p>
+              <p class="error-desc" id="route-error-desc">Terjadi gangguan saat menghubungi layanan OSRM.</p>
+            </div>
+            <button type="button" id="retry-route-btn" class="btn-retry">Coba Lagi</button>
+          </div>
+
+          <!-- Success Result Card -->
+          <article id="route-result-card" class="result-card" hidden>
+            <div class="result-card-top">
+              <div>
+                <span class="eyebrow-label">HASIL RUTE OSRM</span>
+                <p id="route-summary-via" class="route-via-text">Rute utama melalui jalan arteri</p>
+              </div>
+              <span id="route-arrival-pill" class="arrival-pill">Tiba --:--</span>
+            </div>
+
+            <div class="metrics-grid">
+              <div class="metric-box">
+                <span class="metric-label">TOTAL JARAK</span>
+                <div class="metric-value-row">
+                  <span id="metric-distance" class="metric-number">0.0</span>
+                  <span id="metric-distance-unit" class="metric-unit">km</span>
+                </div>
+              </div>
+              <div class="metric-box">
+                <span class="metric-label">ESTIMASI WAKTU</span>
+                <div class="metric-value-row">
+                  <span id="metric-duration" class="metric-number">0</span>
+                  <span id="metric-duration-unit" class="metric-unit">mnt</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Route Mode Switcher (Fastest vs Alternative) -->
+            <div class="route-modes-block">
+              <div class="modes-header">
+                <span class="modes-label">PILIHAN JALUR</span>
+                <span id="modes-count-note" class="modes-note">1 jalur tersedia</span>
+              </div>
+              <div id="route-alternatives-list" class="alternatives-list" role="radiogroup" aria-label="Pilihan mode rute"></div>
+            </div>
+
+            <!-- Turn-by-turn expandable directions -->
+            <div class="steps-block">
+              <button type="button" id="toggle-steps-btn" class="steps-toggle-btn" aria-expanded="false" aria-controls="route-steps-list">
+                <span>Lihat Petunjuk Arah (<span id="steps-count">0</span> langkah)</span>
+                <svg class="steps-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6"></path>
+                </svg>
+              </button>
+              <ol id="route-steps-list" class="steps-list" hidden></ol>
+            </div>
+          </article>
+        </section>
+
+        <!-- Popular Destinations Directory -->
+        <section class="presets-section" aria-labelledby="presets-heading">
+          <div class="presets-header">
+            <div>
+              <span class="eyebrow-label">DIREKTORI LOKASI</span>
+              <h3 id="presets-heading" class="section-subtitle">Destinasi Populer Jakarta</h3>
+            </div>
+            <span id="presets-count-label" class="presets-count">12 lokasi</span>
+          </div>
+
+          <div id="presets-grid" class="presets-grid"></div>
+        </section>
+      </div>
+    </aside>
+
+    <!-- Bottom-Right Floating Map Controls -->
+    <div class="map-controls" role="group" aria-label="Kontrol tampilan peta">
+      <button type="button" id="locate-me-btn" class="map-ctrl-btn" aria-label="Gunakan lokasi saya saat ini sebagai titik awal" title="Gunakan lokasi saya">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 2v3m0 14v3M2 12h3m14 0h3"></path>
+        </svg>
+      </button>
+      <button type="button" id="fit-route-btn" class="map-ctrl-btn" aria-label="Pusatkan peta ke seluruh rute" title="Pusatkan ke rute" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+        </svg>
+      </button>
+      <div class="map-ctrl-divider" aria-hidden="true"></div>
+      <button type="button" id="zoom-in-btn" class="map-ctrl-btn" aria-label="Perbesar peta" title="Perbesar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 5v14M5 12h14"></path>
+        </svg>
+      </button>
+      <button type="button" id="zoom-out-btn" class="map-ctrl-btn" aria-label="Perkecil peta" title="Perkecil">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          <path d="M5 12h14"></path>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Live Toast Feedback for Map Clicks & Geolocation -->
+    <div id="toast-banner" class="toast-banner" role="status" aria-live="polite" hidden></div>
+  </main>
+</body>
+</html>
