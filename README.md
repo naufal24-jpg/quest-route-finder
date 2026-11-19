@@ -2,10 +2,6 @@
 
 Aplikasi web interaktif untuk navigasi peta dan pencarian jalur tercepat (*Shortest Path Finder*) dengan desain antarmuka editorial Liquid Glass, dibangun tanpa API key berbayar.
 
-## Demo Langsung (GitHub Pages)
-Setelah GitHub Pages diaktifkan pada branch `main` folder `/ (root)`, aplikasi dapat diakses dari desktop maupun HP melalui:
-`https://naufal24-jpg.github.io/quest-route-finder/`
-
 ## Teknologi
 - **Frontend:** HTML5, Tailwind CSS, CSS Liquid Glass kustom, dan Vanilla JavaScript
 - **Peta:** Leaflet.js dengan tile Humanitarian OpenStreetMap (`tile.openstreetmap.fr/hot`) dan fallback otomatis ke Esri World Street Map
